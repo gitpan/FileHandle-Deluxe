@@ -12,7 +12,7 @@ use Exporter;
 # documentation at end of file
 
 # version
-$VERSION = '0.90';
+$VERSION = '0.91';
 
 
 # constants
@@ -22,9 +22,6 @@ use constant LOCK_NONE => 0;
 # imports
 @EXPORT_OK = qw[LOCK_SH LOCK_EX LOCK_NB LOCK_UN LOCK_NONE file_lines file_contents];
 %EXPORT_TAGS = ('all' => [@EXPORT_OK]);
-
-# module for stringifying the filehandle
-use overload '""' => \&stringify, 'fallback' => 1;
 
 # Determine if it appears that this computer can handle forked exec
 # Right now we're just detecting if we're in Windows.
@@ -38,6 +35,7 @@ sub new {
 	my $fh = gensym;
 	
 	${*$fh} = tie *$fh, "${class}::Tie", @_;
+	ref(${*$fh}) or return undef;
 	bless $fh, $class;
 }
 
@@ -65,7 +63,9 @@ sub write {
 # returns the path of the file being read/written
 sub stringify {
 	my $fh = shift;
-	return ${*$fh}->{'path'};
+	return defined(${*$fh}) ? ${*$fh}->{'path'} : undef;
+	
+	# return ${*$fh}->{'path'};
 }
 
 # returns the contents of the file
@@ -80,15 +80,12 @@ sub lines {
 	return ${*$fh}->lines(@_);
 }
 
+# stringify the filehandle
+use overload '""' => \&stringify, 'fallback' => 1;
 
-#-------------------------------------------------------------
 # non-OO functions
-# 
 sub file_lines {return FileHandle::Deluxe->new(shift, @_)->lines(@_)}
 sub file_contents {return FileHandle::Deluxe->new(shift, @_)->contents(@_)}
-# 
-# non-OO functions
-#-------------------------------------------------------------
 
 
 
@@ -144,17 +141,10 @@ sub TIEHANDLE {
 		)
 		{$opts{'lazy_open'} = 0}
 	
-	# properties
+	# set properties
 	%{$self} = (
-		auto_croak=>1,
-		auto_close=>1,
-		lazy_open=>1,
-		plain_path=>1,
-		read => '',
-		write => '',
-		append => '',
-		pipe_to => '',
-		pipe_from => '',
+		(map {$_ => 1} qw[auto_croak auto_close lazy_open plain_path]),
+		(map {$_ => ''} qw[read write append pipe_to pipe_from]),
 		%opts
 	);
 	
@@ -236,7 +226,7 @@ sub get_fh {
 		}
 	}
 	
-	# piping from a program
+	# piping to/from a program
 	elsif ($self->{'pipe_from'} || $self->{'pipe_to'})
 		{$self->safe_pipe}
 		
@@ -351,7 +341,6 @@ sub get_fh {
 			unless (flock ($self->{'real_fh'}, $lock))
 				{$self->{'auto_croak'} and croak 'unable to get file lock'}
 		}
-		
 	}
 	# 
 	# reading/writing a regular file
@@ -461,7 +450,7 @@ sub is_tainted {
 	my ($junk);
 	return ! eval
 		{
-		$junk=join('', @_), kill 0;
+		$junk=join('', grep {defined} @_), kill 0;
 		1;
 		};
 }
@@ -891,7 +880,7 @@ Example:
 This option must be set to true if you want to use FileHandle::Deluxe while not running in taint mode.
 It is I<highly recommended> that you always run Perl in taint mode until you are clear on when it is ok
 not to use tainting.  In particular, you should I<always> use taint mode for web applications, regardless
-of how safe you think it is.  If you are making the mistake of developing a web application 
+of how safe you think your script is.  If you are making the mistake of developing a web application 
 without using tainting, consider the words of Randal L. Schwartz, one of the world's foremost experts
 on Perl: "*All* of my Web scripts run with taintchecks on.  Cuz I make mistakes sometimes.  Fancy that. :-)"
 
@@ -971,16 +960,15 @@ Contrary to what you might expect, empty lines and lines consisting of the zero 
 
 =item auto_croak
 
-By default, FileHandle::Deluxe croaks if it is unable to open the file.  If you would prefer to do your own croaking, set C<auto_croak> to true.
+By default, FileHandle::Deluxe croaks if it is unable to open the file.  If you would prefer to do your own croaking, set C<auto_croak> to false.
 
- $fh = FileHandle::Deluxe->new($path, auto_croak=>1);
+ $fh = FileHandle::Deluxe->new($path, auto_croak=>0);
 
 If C<auto_croak> is set to false then C<lazy_open> defaults to false as well, meaning that the open attempt occurs when the FileHandle::Deluxe object is created.
 
 =item lazy_open
 
-By default, FileHandle::Deluxe does not open the file until a read or write call is made to the file handle (this does not
-apply to handles for executables).  If you want the file to open when C<new> is called, set C<lazy_open> to false:
+By default, FileHandle::Deluxe does not open the file until a read or write call is made to the file handle.  If you want the file to open when C<new> is called, set C<lazy_open> to false:
 
  $fh = FileHandle::Deluxe->new($path, lazy_open=>1);
 
@@ -988,7 +976,7 @@ C<lazy_open> defaults to false if you set C<auto_croak> to false.
 
 =item lock
 
-By default, FileHandle::Deluxe gets a shared lock for read-only file handles, and an exclusive lock for 
+By default, FileHandle::Deluxe gets a shared lock for read-only file handles and an exclusive lock for 
 write or read/write handles.  If you want to get a different type of lock, or no lock at all, set the 
 C<lock> option.  For no lock, set C<lock> to 0:
 
@@ -1064,7 +1052,7 @@ C<traditional_open_notation>:
 
  $fh = FileHandle->new('> data.txt', traditional_open_notation=>1);
 
-Avoid using C<traditional_open_notation>.  Use the C<read>, C<write>, C<append>, C<pipe_to>, and C<pipe_from> options instead.  C<traditional_open_notation> also negates the C<plain_path> option.
+Avoid using C<traditional_open_notation>.  Use the C<read>, C<write>, C<append>, C<pipe_to>, and C<pipe_from> options instead.  C<traditional_open_notation> also negates the C<plain_path> option, another important security layer.
 
 =item write
 
@@ -1074,7 +1062,7 @@ C<write> indicates that the file should be opened for writing:
 
 =head2 contents
 
-The C<contents> method returns the entire contents of the file.  In array context it returns each line as an individual element in the array.  It scalar context it returns the file as a single string.  So, for example, the following 
+The C<contents> method returns the entire contents of the file.  In array context it returns each line as an individual array element.  In scalar context it returns the file as a single string.  So, for example, the following 
 command outputs the entire file:
 
  print $fh->contents;
@@ -1124,6 +1112,10 @@ F<miko@idocs.com>
 
 Initial release
 
+=item Version 0.91
+
+Bug fixes
+
 
 =back
 
@@ -1134,7 +1126,7 @@ Initial release
 Version 0.90
 
 registered:  Aug 19, 2002
-uploaded:    
+uploaded:    Aug 19, 2002
 appeared:    
 announced:   
 

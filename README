@@ -1,4 +1,4 @@
-FileHandle/Deluxe version 0.90
+FileHandle/Deluxe version 0.91
 ========================
 
 NAME
@@ -144,7 +144,7 @@ METHODS
         recommended* that you always run Perl in taint mode until you are
         clear on when it is ok not to use tainting. In particular, you
         should *always* use taint mode for web applications, regardless of
-        how safe you think it is. If you are making the mistake of
+        how safe you think your script is. If you are making the mistake of
         developing a web application without using tainting, consider the
         words of Randal L. Schwartz, one of the world's foremost experts on
         Perl: "*All* of my Web scripts run with taintchecks on. Cuz I make
@@ -253,9 +253,9 @@ METHODS
     auto_croak
         By default, FileHandle::Deluxe croaks if it is unable to open the
         file. If you would prefer to do your own croaking, set "auto_croak"
-        to true.
+        to false.
 
-         $fh = FileHandle::Deluxe->new($path, auto_croak=>1);
+         $fh = FileHandle::Deluxe->new($path, auto_croak=>0);
 
         If "auto_croak" is set to false then "lazy_open" defaults to false
         as well, meaning that the open attempt occurs when the
@@ -263,9 +263,8 @@ METHODS
 
     lazy_open
         By default, FileHandle::Deluxe does not open the file until a read
-        or write call is made to the file handle (this does not apply to
-        handles for executables). If you want the file to open when "new" is
-        called, set "lazy_open" to false:
+        or write call is made to the file handle. If you want the file to
+        open when "new" is called, set "lazy_open" to false:
 
          $fh = FileHandle::Deluxe->new($path, lazy_open=>1);
 
@@ -273,7 +272,7 @@ METHODS
 
     lock
         By default, FileHandle::Deluxe gets a shared lock for read-only file
-        handles, and an exclusive lock for write or read/write handles. If
+        handles and an exclusive lock for write or read/write handles. If
         you want to get a different type of lock, or no lock at all, set the
         "lock" option. For no lock, set "lock" to 0:
 
@@ -378,7 +377,8 @@ METHODS
 
         Avoid using "traditional_open_notation". Use the "read", "write",
         "append", "pipe_to", and "pipe_from" options instead.
-        "traditional_open_notation" also negates the "plain_path" option.
+        "traditional_open_notation" also negates the "plain_path" option,
+        another important security layer.
 
     write
         "write" indicates that the file should be opened for writing:
@@ -388,9 +388,9 @@ METHODS
   contents
 
         The "contents" method returns the entire contents of the file. In
-        array context it returns each line as an individual element in the
-        array. It scalar context it returns the file as a single string. So,
-        for example, the following command outputs the entire file:
+        array context it returns each line as an individual array element.
+        In scalar context it returns the file as a single string. So, for
+        example, the following command outputs the entire file:
 
          print $fh->contents;
 
@@ -436,4 +436,7 @@ AUTHOR
 VERSION
     Version 0.90 Aug 19, 2002
         Initial release
+
+    Version 0.91
+        Bug fixes
 
