@@ -1,0 +1,6 @@
+Revision history for Perl extension FileHandle::Deluxe.
+
+0.01  Tue Aug 20 16:08:29 2002
+	- original version; created by h2xs 1.21 with options
+		-X -n FileHandle::Deluxe
+

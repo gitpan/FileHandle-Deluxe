@@ -1,0 +1,439 @@
+FileHandle/Deluxe version 0.90
+========================
+
+NAME
+    FileHandle::Deluxe - file handle with a lot of extra features
+
+SYNOPSIS
+            use FileHandle::Deluxe;
+        
+            # Open for read: Don't bother checking for open success, 
+            # that's done automatically.  Don't bother locking either,
+            # that's also done automatically.
+            $fh = FileHandle::Deluxe->new($path);
+        
+            # Handle stringifies to the path being read
+            print 'reading from ', $fh, "\n";
+        
+            # Loop through the file handle as usual
+            # the handle is lazy: the file isn't actually
+            # opened until the first read.
+            while (<$fh>) {
+                    ...
+            }
+        
+            # the handle automatically closes when the
+            # the last line is read
+
+INSTALLATION
+    FileHandle::Deluxe can be installed with the usual routine:
+
+            perl Makefile.PL
+            make
+            make test
+            make install
+
+    You can also just copy Deluxe.pm into the FileHandle/ directory of one
+    of your library trees.
+
+DESCRIPTION
+    FileHandle::Deluxe works like a regular FileHandle object, with the
+    addition of doing the routine file handle chores for you.
+    FileHandle::Deluxe (FD) is targeted at beginning Perl users who usually
+    find those tasks intimidating and often elect to skip them rather than
+    learn how to do them. FileHandle::Deluxe defaults to a set of best
+    practices for working with file handles.
+
+    The following sections describe the practices and features implemented
+    by FD.
+
+  Security
+
+    FileHandles are the most notorious source of Perl application security
+    holes. FD implements a strict set of security rules. Rather than
+    allowing users "enough rope to hang themselves", FD forces the user to
+    either program more securely or explicitly acknowlege that their program
+    uses insecure techniques. Hopefully most FD users will choose the first
+    option.
+
+    For beginners, FD refuses to run unless either Perl is in taint mode or
+    the developer gives explicit permission for FD to run while not in taint
+    mode. See the documentation on the allow_insecure_code option below for
+    more details.
+
+    FD also dispenses with the traditional notation for indicating if a file
+    should be opened for reading, writing, etc. For example, the argument ">
+    mydata.txt" would be prohibited. Instead, to indicate opening a file for
+    writing, the command for a new file handle would use the "write" option:
+
+     $fh = FileHandle::Deluxe->new($path, write=>1);
+
+    FD refuses to open any file using a tainted path. (Regular file handles
+    will open files for read using tainted paths.) Users, however,
+    frequently find the task of properly untainting paths more than they
+    want to deal with, so FD helps out. The user may indicate that certain
+    files, directories, or entire directory trees are "safe". Tainted data
+    paths may be used to open files within safe locations. See the sections
+    for safe_files, safe_dirs, and safe_trees below for more details.
+
+    FD also addresses security issues with executable files. When an FD file
+    handle is opened for piping to and from an executable, FD automatically
+    uses the more secure exec method for opening the file handles. The exec
+    method opens the executables directly, instead of spawning an
+    intermediate shell, thereby bypassing shell hacks. See the sections for
+    pipe_to and pipe_from below for more details.
+
+  File Locking
+
+    File locking is a file handle housekeeping nuisance that even
+    experienced Perl programmers often overlook. FD takes care of file
+    locking chores for you. Files that are opened as read only get a shared
+    lock. Files that are opened as writable get an exclusive lock. See the
+    section on file locks below for more details.
+
+  Resource Conservation
+
+    FD file handles are "lazy"... they do not open the files until they are
+    actually used. Furthermore, for read-only files, the file handles are
+    closed once the last line of the file is read. By using these
+    conservation features, a function can return a large number of FD
+    objects (perhaps representing all the files in a directory) without
+    using up limited system file handles. See the section on the lazy and
+    auto_close options below for more details.
+
+  Convenience
+
+    FD simplifies many tasks associated with working with files. For
+    beginners, FD objects stringify to the file paths, so a function can
+    return a series of FD objects that can be easily used to output file
+    names. FD handles also provide the ability to quickly slurp in the
+    entire contents of a file either as an array of pre-chomped lines or as
+    a single string. See the lines and contents methods below, and also the
+    non-OO functions file_lines and file_contents.
+
+    Speaking of chomping, FD handles can also be set to automatically chomp
+    lines as you pull them from the file. See the auto_chomp option for more
+    details.
+
+METHODS
+  FileHandle->new($path);
+
+    The "new" method creates a new FileHandle::Deluxe object. The first and
+    only required argument is a file path. If there are no further
+    arguments, the file is opened for reading, the file gets a shared lock,
+    and the entire program croaks if the file cannot be opened. The path may
+    not be tainted unless the safe_files, safe_dirs, and/or safe_trees
+    options are used (see option list below for more details).
+
+    The following optional arguments may be passed to "new". None of these
+    arguments may be tainted.
+
+    append
+        Open the file for appending... that is, add to the file without
+        deleting what is already there. The file does not need to already
+        exist. If this option is set, then the "write" option is also
+        assumed to be true.
+
+        Example:
+
+         $fh = FileHandle::Deluxe->new('data.txt', append=>1);
+
+    allow_insecure_code
+        This option must be set to true if you want to use
+        FileHandle::Deluxe while not running in taint mode. It is *highly
+        recommended* that you always run Perl in taint mode until you are
+        clear on when it is ok not to use tainting. In particular, you
+        should *always* use taint mode for web applications, regardless of
+        how safe you think it is. If you are making the mistake of
+        developing a web application without using tainting, consider the
+        words of Randal L. Schwartz, one of the world's foremost experts on
+        Perl: "*All* of my Web scripts run with taintchecks on. Cuz I make
+        mistakes sometimes. Fancy that. :-)"
+
+        To run Perl in taint mode, add a capital T to your bang path:
+
+         #!/usr/local/bin/perl -wT  
+
+        You'll probably also want to set $ENV{'PATH'} to an empty string at
+        the top of your script:
+
+         $ENV{'PATH'} = '';
+
+        If you are sure that you want to run Perl without tainting, you can
+        use FileHandle::Deluxe by adding the allow_insecure_code option to
+        your call to new:
+
+         $fh = FileHandle::Deluxe->new($path, allow_insecure_code=>1);
+
+    allow_insecure_program_arguments
+        FileHandle::Deluxe uses the piped exec method for opening
+        executables. That means that, among things, tainted arguments can be
+        passed to the executable. Passing tainted arguments to an external
+        program won't cause any security problems in your Perl script
+        itself, but it might cause security holes in the external program
+        itself, so FileHandle::Deluxe does not allow it by default.
+
+        If you are sure you want to allow tainted arguments to be passed,
+        set allow_insecure_program_arguments to true:
+
+         $fh = FileHandle::Deluxe->new(
+             $path, 
+             pipe_to=>1,
+             args=>[@arguments],
+             allow_insecure_program_arguments=>1,
+             );
+
+        If FileHandle::Deluxe uses the shell method for opening an
+        executable (see allow_shell_execute below), and if tainting is on,
+        then allow_insecure_program_arguments makes no difference, the
+        arguments may not be tainted.
+
+    allow_shell_execute
+        FileHandle::Deluxe uses the piped exec method for opening
+        executables (which is much more secure) if the operating system
+        appears to support it. (The current test for supporting piped exec
+        is if $^O contains the string "Win" .. i.e. it's a Windows
+        machine... which is perhaps not the most robust test. Suggestions
+        are welcome.) If it appears that the OS does NOT support piped
+        execs, then it will open the executable using a shell, but *only* if
+        the allow_shell_execute option is set to true, like this:
+
+         $fh = FileHandle::Deluxe->new(
+             $path, 
+             pipe_to=>1,
+             args=>[@arguments],
+             allow_shell_execute=>1,
+             );
+
+        If FileHandle::Deluxe uses the shell method for opening an
+        executable, and if tainting is on, then program arguments may not be
+        tainted.
+
+    args
+        Arguments to pass to an external executable. For example, the
+        following code sends four arguments to sendmail:
+
+         $fh = FileHandle::Deluxe->new(
+             $sendmail, 
+             pipe_to=>1,
+             args=>['-t', '-f', 'error@idocs.com', 'miko@idocs.com'],
+             );
+
+    auto_close
+        By default, FileHandle::Deluxe closes read-only files when the last
+        line is read. This conserves system file handles and frees up locks
+        for other objects that may be using the same file. If you want the
+        handle to keep the file open after the last line is read, set
+        "auto_close" to false:
+
+         $fh = FileHandle::Deluxe->new($path, auto_close=>0);
+
+    auto_chomp
+        The "auto_chomp" option (which is not on by default) tells the file
+        handle to remove trailing end-of-line characters each time a line is
+        read from the file. So, for example, the following code reads all
+        the lines from the file, removing end-of-line characters form each
+        line:
+
+         $fh = FileHandle::Deluxe->new($path, auto_chomp=>1);
+ 
+         while (<$fh>) {
+           if ($_ eq 'Fred'){...}
+           elsif ($_ eq 'Barney'){...}
+         }
+
+        Contrary to what you might expect, empty lines and lines consisting
+        of the zero character ("0"), do *not* fail the initial test in the
+        while loop. That's because in "auto_chomp" mode, the returned "line"
+        is really an object that boolifies to true the first time it is
+        tested. All subsequent boolean tests are based on the content of the
+        line. The object always stringifies to the text of the line in the
+        file, so use it like a regular string.
+
+    auto_croak
+        By default, FileHandle::Deluxe croaks if it is unable to open the
+        file. If you would prefer to do your own croaking, set "auto_croak"
+        to true.
+
+         $fh = FileHandle::Deluxe->new($path, auto_croak=>1);
+
+        If "auto_croak" is set to false then "lazy_open" defaults to false
+        as well, meaning that the open attempt occurs when the
+        FileHandle::Deluxe object is created.
+
+    lazy_open
+        By default, FileHandle::Deluxe does not open the file until a read
+        or write call is made to the file handle (this does not apply to
+        handles for executables). If you want the file to open when "new" is
+        called, set "lazy_open" to false:
+
+         $fh = FileHandle::Deluxe->new($path, lazy_open=>1);
+
+        "lazy_open" defaults to false if you set "auto_croak" to false.
+
+    lock
+        By default, FileHandle::Deluxe gets a shared lock for read-only file
+        handles, and an exclusive lock for write or read/write handles. If
+        you want to get a different type of lock, or no lock at all, set the
+        "lock" option. For no lock, set "lock" to 0:
+
+         $fh = FileHandle::Deluxe->new($path, lock=>0);
+
+        For any other lock, use LOCK_SH (shared lock), LOCK_EX (exclusive
+        lock), and LOCK_NB (do not wait for lock). To use these constants,
+        you must add the ':all' option to your use FileHandle::Deluxe call,
+        like this:
+
+         use FileHandle::Deluxe ':all';
+
+    pipe_from, pipe_to
+        "pipe_from" and "pipe_to" indicate to pipe to or from an executable
+        file. For example, the following command indicates to open a handle
+        for piping to Sendmail (where $sendmail is the path to the Sendmail
+        executable):
+
+         $fh = FileHandle::Deluxe->new($sendmail, pipe_to=>1);
+
+        Any arguments you want passed to the executable should be sent with
+        the "args" option as an array reference:
+
+         $fh = FileHandle::Deluxe->new(
+             $sendmail, 
+             pipe_to=>1,
+             args=>['-t', '-f', 'error@idocs.com', 'miko@idocs.com'],
+             );
+
+    plain_path
+        "plain_path", which is true by default, indicates that if the given
+        file is tainted, it may only consist of a "plain" file path
+        characters, that is, single dots, alphanumerics, spaces,
+        underscores, and slashes. Doubles dots, ampersands, pipes, and other
+        fancy characters are prohibited.
+
+        "plain_path" is the single best security layer FileHandle::Deluxe
+        gives you. It is highly recommended that you do not disable
+        "plain_path".
+
+    read
+        Indicates that the file should be open for reading. If none of
+        "write", "append", "pipe_to", or "pipe_from" are sent than "read"
+        defaults to true.
+
+    safe_files, safe_dirs, safe_trees
+        These options indicate "safe" locations for the file. The file path
+        must be within one of the locations for each of these options that
+        is sent, or it will not be opened. If the file path is tainted, but
+        is within one of these locations, then it will be opened.
+
+        "safe_files" gives a list of complete file paths. The path for
+        opening must be one of the given paths. For example, the following
+        command indicates that FileHandle::Deluxe may open data.txt,
+        names.txt, or adds.txt:
+
+         $fh = FileHandle::Deluxe->new(
+             $path, 
+             safe_files=>['data.txt', 'names.txt', 'adds.txt'],
+             );
+
+        "safe_dirs" gives a list of directories, one of which the file must
+        be in. The file must be directly within the directory, not nested
+        deeper in the directory tree (see "safe_trees" below for that). For
+        example, the following command indicates that the file must be
+        directly within ./data/, ./names/, or ./adds/:
+
+         $fh = FileHandle::Deluxe->new(
+             $path, 
+             safe_dirs=>['./data/', './names/', './adds/'],
+             );
+
+        "safe_trees" also gives a list of directories, but the file may be
+        anywhere nested within one of the directories, not necessarily
+        directly within it. So, for example, if one of the given directories
+        was ./adds/:
+
+         $fh = FileHandle::Deluxe->new(
+             $path, 
+             safe_trees=>['./data/', './names/', './adds/'],
+             );
+
+        then ./adds/joined/data.txt, ./adds/joined/quit/data.txt, as well as
+        ./adds/data.txt would all be accepted.
+
+    traditional_open_notation
+        "traditional_open_notation", which is false by default, indicates
+        that FileHandle::Deluxe should open the file using traditional Perl
+        file handle opening notation. For example, traditionally a handle
+        for writing to a file would be opened like this (notice the > at the
+        beginning of the path string):
+
+         $fh = FileHandle->new('> data.txt') or die $!;
+
+        The problem with that technique is that it makes it easier for
+        careless programming to open security holes. If the file path is
+        carelessly untainted then unintended commands can be run through the
+        shell. FileHandle::Deluxe prohibits shell meta-characters unless you
+        explictly choose to use them with "traditional_open_notation":
+
+         $fh = FileHandle->new('> data.txt', traditional_open_notation=>1);
+
+        Avoid using "traditional_open_notation". Use the "read", "write",
+        "append", "pipe_to", and "pipe_from" options instead.
+        "traditional_open_notation" also negates the "plain_path" option.
+
+    write
+        "write" indicates that the file should be opened for writing:
+
+         $fh = FileHandle->new('data.txt', write=>1);
+
+  contents
+
+        The "contents" method returns the entire contents of the file. In
+        array context it returns each line as an individual element in the
+        array. It scalar context it returns the file as a single string. So,
+        for example, the following command outputs the entire file:
+
+         print $fh->contents;
+
+  lines
+
+        The "contents" method returns the entire contents of the file as an
+        array. Each line is an individual element in the array. All lines
+        are chomped. For example, the following code assigns the lines to an
+        array:
+
+         @names = $fh->lines;
+
+  file_contents, file_lines
+
+        "file_contents" and "file_lines" are static (i.e. no object
+        required) equivalents for slurping in the entire contents of a file.
+        These commands can be imported by adding the ':all' option to your
+        use FileHandle::Deluxe call, like this:
+
+         use FileHandle::Deluxe ':all';
+
+        Each of these commands takes the file path as the first argument:
+
+         print file_contents('data.txt');
+         @arr file_lines('data.txt');
+
+MISC INTERESTING STUFF
+        FileHandle::Deluxe objects stringify to the path for the file they
+        open. That means you can use the object as a string if you want to
+        know the path:
+
+                print 'reading from ', $fh, "\n";
+
+TERMS AND CONDITIONS
+    Copyright (c) 2001-2002 by Miko O'Sullivan. All rights reserved. This
+    program is free software; you can redistribute it and/or modify it under
+    the same terms as Perl itself. This software comes with NO WARRANTY of
+    any kind.
+
+AUTHOR
+    Miko O'Sullivan miko@idocs.com
+
+VERSION
+    Version 0.90 Aug 19, 2002
+        Initial release
+
