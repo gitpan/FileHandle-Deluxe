@@ -12,7 +12,7 @@ use Exporter;
 # documentation at end of file
 
 # version
-$VERSION = '0.91';
+$VERSION = '0.92';
 
 
 # constants
@@ -215,21 +215,13 @@ sub get_fh {
 	$self->{'real_fh'} and return $self->{'real_fh'};
 	
 	# traditional open notation
-	if ($self->{'traditional_open_notation'}) {
-		$self->{'real_fh'} = FileHandle->new($self->{'path'});
-		
-		# if failure
-		if (! $self->{'real_fh'}) {
-			if ($self->{'auto_croak'})
-				{croak "cannot open \"$self->{'path'}\": $!"}
-			return undef;
-		}
-	}
+	if ($self->{'traditional_open_notation'})
+		{$self->{'real_fh'} = FileHandle->new($self->{'path'})}
 	
 	# piping to/from a program
 	elsif ($self->{'pipe_from'} || $self->{'pipe_to'})
 		{$self->safe_pipe}
-		
+	
 	#-----------------------------------------------------------------------
 	# reading/writing a regular file
 	# 
@@ -270,7 +262,7 @@ sub get_fh {
 			grep {s|($dirdelre)*$|$dirdel|} @dirs, @trees;
 			
 			# safe_files
-			if (@files &~ grep {$_ eq $path} @files)
+			if (@files &&! grep {$_ eq $path} @files)
 				{croak 'File must be one of the following: ', join(', ', @files)}
 			
 			# safe_dir
@@ -300,7 +292,8 @@ sub get_fh {
 					{croak "path ($path) must be within one of the following directory trees: ", join(', ', @trees)}
 			}
 			
-			# if we get this far in this block, the path is considered safe
+			# If we get this far in this block, the path is considered safe
+			# 
 			# WARNING: do not copy and use the following code unless you
 			# really know what you're doing.  As a general rule, untainting
 			# an entire string is a Bad Idea.  I do it here because the 
@@ -323,28 +316,32 @@ sub get_fh {
 		$self->{'real_fh'} = 
 			FileHandle->new("$self->{'write'}$self->{'append'}$self->{'read'}$open_path");
 		
-		# if failure
-		if (! $self->{'real_fh'}) {
-			if ($self->{'auto_croak'})
-				{croak "cannot open \"$self->{'path'}\": $!"}
-			return undef;
-		}
-		
-		# determine lock style
-		if (defined $self->{'lock'})
-			{$lock = $self->{'lock'}}
-		else
-			{$lock = $self->{'write'} ? LOCK_EX : LOCK_SH}
-		
-		# get lock
-		if ($lock) {
-			unless (flock ($self->{'real_fh'}, $lock))
-				{$self->{'auto_croak'} and croak 'unable to get file lock'}
+		# get lock unless failure
+		if ($self->{'real_fh'}) {
+			# determine lock style
+			if (defined $self->{'lock'})
+				{$lock = $self->{'lock'}}
+			else
+				{$lock = $self->{'write'} ? LOCK_EX : LOCK_SH}
+			
+			# get lock
+			if ($lock) {
+				unless (flock ($self->{'real_fh'}, $lock))
+					{$self->{'auto_croak'} and croak 'unable to get file lock'}
+			}
 		}
 	}
 	# 
 	# reading/writing a regular file
 	#-----------------------------------------------------------------------
+	
+	
+	# if failure
+	if (! $self->{'real_fh'}) {
+		if ($self->{'auto_croak'})
+			{croak "cannot open \"$self->{'path'}\": $!"}
+		return undef;
+	}
 	
 	return $self->{'real_fh'};
 }
@@ -432,11 +429,10 @@ sub safe_pipe {
 	}
 	
 	# if we didn't get a file handle
-	unless ($fh || (! $self->{'auto_croak'}) )
-		{croak "Cannot open $self->{'path'}: $!"}
+	$fh or return;
 	
 	# store filehandle
-	$self->{'real_fh'} = $fh;
+	return $self->{'real_fh'} = $fh;
 }
 # 
 # safe_pipe
@@ -478,7 +474,7 @@ sub in_taint_mode {
 sub eof_close {
 	my ($self) = @_;
 	$self->{'auto_close'} or return;
-	($self->{'read'} &~ $self->{'write'}) or return;
+	($self->{'read'} &&! $self->{'write'}) or return;
 	eof($self->get_fh) or return;
 	$self->{'read_done'} = 1;
 	delete $self->{'real_fh'};
@@ -498,7 +494,6 @@ sub contents {
 	# reset everything
 	delete $self->{'real_fh'};
 	delete $self->{'read_done'};
-	
 	$fh = $self->get_fh or return undef;
 	
 	# array context
@@ -550,7 +545,7 @@ sub READLINE {
 	else {
 		my $rv = <$fh>;
 		$self->eof_close;
-		$self->{'auto_chomp'} and return FileHandle::Deluxe::FileLine->new($rv);
+		$rv and $self->{'auto_chomp'} and return FileHandle::Deluxe::FileLine->new($rv);
 		return $rv;
 	}
 }
@@ -582,7 +577,6 @@ sub WRITE {
 	$self->PRINT(substr($buf, $len, $offset));
 	$len;
 }
-
 
 
 sub PRINT {
@@ -858,7 +852,11 @@ Speaking of chomping, FD handles can also be set to automatically chomp lines as
 
 =head2 FileHandle->new($path);
 
-The C<new> method creates a new FileHandle::Deluxe object.  The first and only required argument is a file path.  If there are no further arguments, the file is opened for reading, the file gets a shared lock, and the entire program croaks if the file cannot be opened.  The path may not be tainted unless the safe_files, safe_dirs, and/or safe_trees options are used (see option list below for more details). 
+The C<new> method creates a new FileHandle::Deluxe object.  The first and only required argument is a file path:
+
+ $fh = FileHandle::Deluxe->new($path);
+
+If there are no further arguments, the file is opened for reading, the file gets a shared lock, and the entire program croaks if the file cannot be opened.  The path may not be tainted unless the safe_files, safe_dirs, and/or safe_trees options are used (see option list below for more details). 
 
 The following optional arguments may be passed to C<new>.  None of these arguments may be tainted.
 
@@ -917,7 +915,7 @@ If FileHandle::Deluxe uses the shell method for opening an executable (see allow
 
 =item allow_shell_execute
 
-FileHandle::Deluxe uses the piped exec method for opening executables (which is much more secure) if the operating system appears to support it.  (The current test for supporting piped exec is if $^O contains the string "Win" .. i.e. it's a Windows machine... which is perhaps not the most robust test.  Suggestions are welcome.)  If it appears that the OS does NOT support piped execs, then it will open the executable using a shell, but I<only> if the allow_shell_execute option is set to true, like this:
+FileHandle::Deluxe uses the piped exec method for opening executables (which is much more secure) if the operating system appears to support it.  (The current test for supporting piped exec is if $^O contains the string "Win" ... i.e. it's a Windows machine... which is perhaps not the most robust test.  Suggestions are welcome.)  If it appears that the OS does NOT support piped execs, then it will open the executable using a shell, but I<only> if the allow_shell_execute option is set to true, like this:
 
  $fh = FileHandle::Deluxe->new(
      $path, 
@@ -1112,7 +1110,11 @@ F<miko@idocs.com>
 
 Initial release
 
-=item Version 0.91
+=item Version 0.91 Aug 21, 2002
+
+Bug fixes
+
+=item Version 0.92 Aug 23, 2002
 
 Bug fixes
 

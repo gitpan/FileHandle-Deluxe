@@ -1,4 +1,4 @@
-FileHandle/Deluxe version 0.91
+FileHandle/Deluxe version 0.92
 ========================
 
 NAME
@@ -119,11 +119,15 @@ METHODS
   FileHandle->new($path);
 
     The "new" method creates a new FileHandle::Deluxe object. The first and
-    only required argument is a file path. If there are no further
-    arguments, the file is opened for reading, the file gets a shared lock,
-    and the entire program croaks if the file cannot be opened. The path may
-    not be tainted unless the safe_files, safe_dirs, and/or safe_trees
-    options are used (see option list below for more details).
+    only required argument is a file path:
+
+     $fh = FileHandle::Deluxe->new($path);
+
+    If there are no further arguments, the file is opened for reading, the
+    file gets a shared lock, and the entire program croaks if the file
+    cannot be opened. The path may not be tainted unless the safe_files,
+    safe_dirs, and/or safe_trees options are used (see option list below for
+    more details).
 
     The following optional arguments may be passed to "new". None of these
     arguments may be tainted.
@@ -192,7 +196,7 @@ METHODS
         FileHandle::Deluxe uses the piped exec method for opening
         executables (which is much more secure) if the operating system
         appears to support it. (The current test for supporting piped exec
-        is if $^O contains the string "Win" .. i.e. it's a Windows
+        is if $^O contains the string "Win" ... i.e. it's a Windows
         machine... which is perhaps not the most robust test. Suggestions
         are welcome.) If it appears that the OS does NOT support piped
         execs, then it will open the executable using a shell, but *only* if
@@ -437,6 +441,9 @@ VERSION
     Version 0.90 Aug 19, 2002
         Initial release
 
-    Version 0.91
+    Version 0.91 Aug 21, 2002
+        Bug fixes
+
+    Version 0.92 Aug 23, 2002
         Bug fixes
 
